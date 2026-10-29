@@ -112,7 +112,7 @@
 
 <div id="bookList">
   <h1>图书标注看板（只读分享版）</h1>
-  <p class="sub">答案页视角 · 抄写框 ↔ 题目框 对应关系浏览 · 补框评测功能仅限本地版</p>
+  <p class="sub">答案页视角 · 抄写框 ↔ 题目框 对应关系浏览 · 补框为本地标注数据的只读同步</p>
   <div class="books" id="bookCards"></div>
 </div>
 
@@ -128,10 +128,10 @@
       <span><span class="dot a"></span>抄写框</span>
           <span><span class="dot q"></span>题干框</span>
           <span><span class="dot qno"></span>无答案题干框</span>
-          <span style="color:#722ed1;">┚补框(紫虚线=未标注 蓝=正确 黄=错误)</span>
+          <span style="color:#722ed1;">┚补框(蓝=正确 黄=错误)</span>
     </span>
   </div>
-  <div id="statBar" style="display:none !important">
+  <div id="statBar">
     <div class="stat"><span class="lab">补框比例</span><span class="val c-purple" id="stBqRatio">–</span><span class="sub" id="stBqRatioSub"></span></div>
     <div class="sep"></div>
     <div class="stat"><span class="lab">补框跳转正确率</span><span class="val c-blue" id="stBqAcc">–</span><span class="sub" id="stBqAccSub"></span></div>
@@ -441,7 +441,8 @@ function renderAnswerPage(idx, activeKey) {
       el.onclick = (ev) => { ev.stopPropagation(); selectAnswerBox(bx, el); };
       wrap.appendChild(el);
     });
-    // ---- 补框（只读版不渲染） ----
+    // ---- 补框（静态同步数据，只读渲染） ----
+    renderBuKu(wrap, p, scale);
     $('#aPageName').textContent = `${p.imageName} · ${p.boxes.length}个抄写框 · ${(bqList()[p.imageId]||[]).length}个补框`;
     $('#aPrev').disabled = idx <= 0;
     $('#aNext').disabled = idx >= curBook.answerPages.length - 1;
@@ -466,15 +467,17 @@ function renderBuKu(wrap, p, scale) {
     const mt = bq.match ? ` → 素材${bq.match.taskId} #${bq.match.frameId}` : '';
     el.title = `补框${n}（${lab}）${mt}`;
     el.innerHTML = `<span class="bqTag">补${n}</span>
-      <span class="bqBtns">
+      ${READ_ONLY ? '' : `<span class="bqBtns">
         <button class="bqBtn ok${bq.label==='correct'?' active':''}" title="标注：跳转正确(蓝)">✓</button>
         <button class="bqBtn bad${bq.label==='wrong'?' active':''}" title="标注：跳转错误(黄)">✗</button>
         <button class="bqBtn del" title="删除补框">🗑</button>
-      </span>`;
+      </span>`}`;
     el.onclick = (ev) => { ev.stopPropagation(); selectBuKu(bq, el); };
-    el.querySelector('.ok').onclick = (ev) => { ev.stopPropagation(); bq.label='correct'; saveBq(); selBqId = bq.id; refreshBq(p); updateStats(); };
-    el.querySelector('.bad').onclick = (ev) => { ev.stopPropagation(); bq.label='wrong'; saveBq(); selBqId = bq.id; refreshBq(p); updateStats(); };
-    el.querySelector('.del').onclick = (ev) => { ev.stopPropagation(); store[p.imageId] = store[p.imageId].filter(x=>x.id!==bq.id); saveBq(); refreshBq(p); updateStats(); };
+    if (!READ_ONLY) {
+      el.querySelector('.ok').onclick = (ev) => { ev.stopPropagation(); bq.label='correct'; saveBq(); selBqId = bq.id; refreshBq(p); updateStats(); };
+      el.querySelector('.bad').onclick = (ev) => { ev.stopPropagation(); bq.label='wrong'; saveBq(); selBqId = bq.id; refreshBq(p); updateStats(); };
+      el.querySelector('.del').onclick = (ev) => { ev.stopPropagation(); store[p.imageId] = store[p.imageId].filter(x=>x.id!==bq.id); saveBq(); refreshBq(p); updateStats(); };
+    }
     wrap.appendChild(el);
   });
 }
@@ -651,7 +654,24 @@ function selectQuestionFrame(t, f, el) {
 }
 
 /* ---------- 启动 ---------- */
-fetch('data/books.json').then(r => r.json()).then(d => { BOOKS = d; initBookList(); })
+fetch('data/books.json').then(r => r.json()).then(async d => {
+    BOOKS = d;
+    // 静态补框数据（从本地同步导出；无则忽略）
+    try {
+      const r2 = await fetch('data/buku_export.json');
+      if (r2.ok) {
+        const ex = await r2.json();
+        // 兼容"导出补框"的结构 {bookId:{bookName,pages:{imageId:{imageName,boxes}}}}
+        for (const [bid, bk] of Object.entries(ex)) {
+          if (!bk || !bk.pages) continue;
+          const map = {};
+          for (const [iid, pg] of Object.entries(bk.pages)) map[iid] = pg.boxes || [];
+          buku[bid] = map;
+        }
+      }
+    } catch(e2) { /* 无静态补框数据 */ }
+    initBookList();
+  })
   .catch(e => { $('#bookCards').innerHTML = '<div class="empty">数据加载失败: '+e+'</div>'; });
 </script>
 </body>
