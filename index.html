@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图书标注看板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#f0f2f5; color:#1f2329; }
+  /* ===== 书列表 ===== */
+  #bookList { max-width: 1100px; margin: 40px auto; padding: 0 24px; }
+  #bookList h1 { font-size: 22px; margin-bottom: 6px; }
+  #bookList p.sub { color:#86909c; font-size:13px; margin-bottom:24px; }
+  .books { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; }
+  .bookCard { display:flex; gap:14px; background:#fff; border-radius:12px; padding:16px; cursor:pointer;
+              box-shadow:0 1px 4px rgba(0,0,0,.06); transition:transform .12s, box-shadow .12s; }
+  .bookCard:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.10); }
+  .bookCard img { width:72px; height:100px; object-fit:cover; border-radius:6px; background:#eee; }
+  .bookCard .info { flex:1; min-width:0; }
+  .bookCard .name { font-size:15px; font-weight:600; line-height:1.4; margin-bottom:6px; }
+  .bookCard .meta { font-size:12px; color:#86909c; margin-bottom:8px; }
+  .bookCard .stats { font-size:12px; color:#4e5969; display:flex; gap:10px; flex-wrap:wrap; }
+  .bookCard .stats b { color:#00b42a; }
+
+  /* ===== 看板 ===== */
+  #board { display:none; height:100vh; flex-direction:column; }
+  #topbar { display:flex; align-items:center; gap:14px; padding:10px 18px; background:#fff; border-bottom:1px solid #e5e6eb; flex-wrap:wrap; }
+  #topbar .back { cursor:pointer; color:#165dff; font-size:14px; user-select:none; padding:4px 10px; border-radius:6px; }
+  #topbar .back:hover { background:#f2f3f5; }
+  #topbar .title { font-size:15px; font-weight:600; flex:1; min-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #topbar select { padding:6px 10px; border-radius:6px; border:1px solid #d0d3d6; font-size:13px; max-width:320px; }
+  #topbar .legend { font-size:12px; color:#86909c; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:3px; vertical-align:-1px; }
+  .dot.q { background:rgba(22,93,255,.9); border:1px solid #165dff; }
+  .dot.qno { background:transparent; border:1px dashed #f53f3f; }
+  .dot.a { background:rgba(83,196,26,.9); border:1px solid #00b42a; }
+
+  #panes { flex:1; display:flex; min-height:0; }
+  .pane { flex:1; display:flex; flex-direction:column; min-width:0; background:#e8eaee; }
+  .pane + .pane { border-left:1px solid #d4d7dc; }
+  .paneHead { display:flex; align-items:center; gap:10px; padding:8px 14px; background:#fff; border-bottom:1px solid #e5e6eb; font-size:13px; flex-wrap:wrap; }
+  .paneHead .tag { font-size:12px; padding:2px 8px; border-radius:4px; white-space:nowrap; }
+  .tag.q { background:#e8f3ff; color:#165dff; }
+  .tag.a { background:#e8ffea; color:#00b42a; }
+  .paneHead .pageName { color:#4e5969; flex:1; min-width:80px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .navBtn { border:1px solid #d0d3d6; background:#fff; border-radius:6px; padding:3px 12px; cursor:pointer; font-size:13px; }
+  .navBtn:disabled { opacity:.4; cursor:default; }
+  .navBtn:hover:not(:disabled) { background:#f2f3f5; }
+
+  .viewer { flex:1; overflow:auto; position:relative; }
+  .pageWrap { position:relative; margin:16px auto; display:inline-block; }
+  .pageWrap img.page { display:block; box-shadow:0 2px 10px rgba(0,0,0,.15); background:#fff; }
+  .bbox { position:absolute; cursor:pointer; border-radius:2px; }
+  .bbox.q { border:2px solid rgba(22,93,255,.85); background:rgba(22,93,255,.10); }
+  .bbox.q:hover { background:rgba(22,93,255,.22); }
+  .bbox.q.active { border-color:#f53f3f; background:rgba(245,63,63,.25); box-shadow:0 0 0 3px rgba(245,63,63,.25); z-index:5; }
+  .bbox.q.noans { border:2px dashed rgba(245,63,63,.85); background:rgba(245,63,63,.06); }
+  .bbox.q .noTag { position:absolute; top:-1px; left:-1px; background:#f53f3f; color:#fff; font-size:10px;
+                   line-height:1; padding:3px 5px; border-radius:2px 0 4px 0; white-space:nowrap; display:none; }
+  .bbox.q.noans .noTag { display:block; }
+  .bbox.q .qid { position:absolute; right:-1px; bottom:-1px; background:rgba(22,93,255,.9); color:#fff;
+                 font-size:10px; line-height:1; padding:3px 5px; border-radius:4px 0 2px 0; white-space:nowrap; }
+  .bbox.a { border:2px solid rgba(0,180,42,.9); background:rgba(0,180,42,.10); }
+  .bbox.a:hover { background:rgba(0,180,42,.24); }
+  .bbox.a.active { border-color:#f53f3f; background:rgba(245,63,63,.25); box-shadow:0 0 0 3px rgba(245,63,63,.25); z-index:5; }
+  .bbox.a .aid { position:absolute; left:-1px; top:-1px; background:rgba(0,180,42,.9); color:#fff; font-size:10px;
+                 line-height:1; padding:3px 5px; border-radius:0 0 4px 0; white-space:nowrap; }
+  .bbox.a.unlinked { border:2px dashed rgba(140,140,140,.8); background:rgba(140,140,140,.06); }
+  .bbox.a.unlinked .aid { background:rgba(140,140,140,.95); }
+
+  /* ===== 补框（手动添加） ===== */
+  .drawToggle { border:1px solid #d0d3d6; background:#fff; border-radius:6px; padding:3px 10px; cursor:pointer; font-size:13px; user-select:none; white-space:nowrap; }
+  .drawToggle.on { background:#722ed1; color:#fff; border-color:#722ed1; }
+  .bbox.bq { border:3px dashed #722ed1; background:rgba(114,46,209,.08); z-index:4; }
+  .bbox.bq:hover { background:rgba(114,46,209,.18); }
+  .bbox.bq.selected { box-shadow:0 0 0 3px rgba(114,46,209,.3); }
+  .bbox.bq.correct { border:3px solid #165dff; background:rgba(22,93,255,.12); }
+  .bbox.bq.wrong { border:3px solid #ff9a00; background:rgba(255,154,0,.15); }
+  .bbox.bq .bqTag { position:absolute; top:-1px; left:-1px; background:#722ed1; color:#fff; font-size:10px;
+                    line-height:1; padding:3px 5px; border-radius:2px 0 4px 0; white-space:nowrap; }
+  .bbox.bq.correct .bqTag { background:#165dff; }
+  .bbox.bq.wrong .bqTag { background:#ff9a00; }
+  .bbox.bq .bqBtns { position:absolute; top:-12px; right:-8px; display:none; gap:3px; z-index:9; }
+  .bbox.bq:hover .bqBtns, .bbox.bq.selected .bqBtns { display:flex; }
+  .bqBtn { width:20px; height:20px; border-radius:50%; border:none; cursor:pointer; font-size:12px; line-height:1;
+           color:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .bqBtn.ok { background:#165dff; } .bqBtn.ok.active { outline:2px solid #165dff; outline-offset:1px; }
+  .bqBtn.bad { background:#ff9a00; } .bqBtn.bad.active { outline:2px solid #ff9a00; outline-offset:1px; }
+  .bqBtn.del { background:#f53f3f; }
+  #drawPreview { position:absolute; border:2px dashed #722ed1; background:rgba(114,46,209,.10); pointer-events:none; display:none; z-index:8; }
+  .bbox.a.matched { border:3px solid #722ed1 !important; background:rgba(114,46,209,.22) !important; box-shadow:0 0 0 3px rgba(114,46,209,.35); z-index:3; }
+  .bbox.a.matched .aid { background:#722ed1 !important; }
+  .zoomPct { font-size:12px; color:#4e5969; min-width:42px; text-align:center; user-select:none; }
+
+  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:rgba(0,0,0,.75);
+           color:#fff; padding:8px 18px; border-radius:8px; font-size:13px; opacity:0; pointer-events:none; transition:opacity .25s; z-index:99; }
+  #toast.show { opacity:1; }
+  .empty { display:flex; align-items:center; justify-content:center; height:100%; color:#86909c; font-size:14px; }
+
+  /* ===== 统计指标条 ===== */
+  #statBar { display:none; gap:18px; padding:8px 18px; background:#fff; border-bottom:1px solid #e5e6eb;
+             font-size:13px; align-items:center; flex-wrap:wrap; }
+  #statBar .stat { display:flex; align-items:baseline; gap:6px; white-space:nowrap; }
+  #statBar .stat .lab { color:#86909c; }
+  #statBar .stat .val { font-size:17px; font-weight:700; }
+  #statBar .stat .sub { color:#86909c; font-size:11px; }
+  #statBar .sep { width:1px; height:18px; background:#e5e6eb; }
+  .c-blue { color:#165dff; } .c-orange { color:#ff9a00; } .c-green { color:#00b42a; } .c-purple { color:#722ed1; } .c-gray { color:#86909c; }
+</style>
+</head>
+<body>
+
+<div id="bookList">
+  <h1>图书标注看板（只读分享版）</h1>
+  <p class="sub">答案页视角 · 抄写框 ↔ 题目框 对应关系浏览 · 补框评测功能仅限本地版</p>
+  <div class="books" id="bookCards"></div>
+</div>
+
+<div id="board">
+  <div id="topbar">
+    <span class="back" id="btnBack">← 返回书列表</span>
+    <span class="title" id="bookTitle"></span>
+    <label style="font-size:12px;color:#86909c;">答案页</label>
+    <select id="ansSel"></select>
+    <label style="font-size:12px;color:#86909c;">题干页</label>
+    <select id="taskSel"></select>
+    <span class="legend">
+      <span><span class="dot a"></span>抄写框</span>
+          <span><span class="dot q"></span>题干框</span>
+          <span><span class="dot qno"></span>无答案题干框</span>
+          <span style="color:#722ed1;">┚补框(紫虚线=未标注 蓝=正确 黄=错误)</span>
+    </span>
+  </div>
+  <div id="statBar" style="display:none !important">
+    <div class="stat"><span class="lab">补框比例</span><span class="val c-purple" id="stBqRatio">–</span><span class="sub" id="stBqRatioSub"></span></div>
+    <div class="sep"></div>
+    <div class="stat"><span class="lab">补框跳转正确率</span><span class="val c-blue" id="stBqAcc">–</span><span class="sub" id="stBqAccSub"></span></div>
+    <div class="sep"></div>
+    <div class="stat"><span class="lab">总正确率</span><span class="val c-green" id="stAllAcc">–</span><span class="sub" id="stAllAccSub"></span></div>
+    <div class="sep"></div>
+    <div class="stat"><span class="lab">构成</span><span class="sub" id="stDetail">–</span></div>
+  </div>
+  <div id="panes">
+    <div class="pane">
+      <div class="paneHead">
+        <span class="tag a">答案页</span>
+        <button class="navBtn" id="aPrev">◀ 上一页</button>
+        <button class="navBtn" id="aNext">下一页 ▶</button>
+        <button class="navBtn" id="aZoomOut" title="缩小(-)">−</button>
+        <span class="zoomPct" id="aZoomPct">适宽</span>
+        <button class="navBtn" id="aZoomIn" title="放大(+)">＋</button>
+        <button class="navBtn" id="aZoomFit" title="适应宽度">适宽</button>
+        
+        
+        
+        <span class="pageName" id="aPageName"></span>
+      </div>
+      <div class="viewer" id="aViewer"><div class="empty">选择答案页</div></div>
+    </div>
+    <div class="pane">
+      <div class="paneHead">
+        <span class="tag q">题干页</span>
+        <button class="navBtn" id="qPrev">◀ 上一页</button>
+        <button class="navBtn" id="qNext">下一页 ▶</button>
+        <button class="navBtn" id="qZoomOut" title="缩小(-)">−</button>
+        <span class="zoomPct" id="qZoomPct">适宽</span>
+        <button class="navBtn" id="qZoomIn" title="放大(+)">＋</button>
+        <button class="navBtn" id="qZoomFit" title="适应宽度">适宽</button>
+        <span class="pageName" id="qPageName"></span>
+      </div>
+      <div class="viewer" id="qViewer"><div class="empty">点击答案框跳转对应题干</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ===== 只读分享版：禁用一切补框/标注/导出操作 =====
+const READ_ONLY = true;
+let BOOKS = [];
+let curBook = null;
+let curAnsIdx = -1;
+let curTaskIdx = -1;
+let taskIdxById = {};
+
+const $ = s => document.querySelector(s);
+const toast = (msg) => { const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1800); };
+function fmt(n){ return n.toLocaleString('zh-CN'); }
+
+function initBookList() {
+  const wrap = $('#bookCards');
+  wrap.innerHTML = '';
+  BOOKS.forEach(b => {
+    const el = document.createElement('div');
+    el.className = 'bookCard';
+    el.innerHTML = `
+      <img src="${b.cover}" onerror="this.style.visibility='hidden'">
+      <div class="info">
+        <div class="name">${b.name}</div>
+        <div class="meta">${b.grade} · ${b.course} · ID ${b.id}</div>
+        <div class="stats">
+          <span>答案页 <b>${fmt(b.nAnswerPages)}</b></span>
+          <span>答案框 <b>${fmt(b.answerPages.reduce((s,p)=>s+p.boxes.length,0))}</b></span>
+          <span>题干框 <b>${fmt(b.nFrames)}</b></span>
+        </div>
+      </div>`;
+    el.onclick = () => openBook(b);
+    wrap.appendChild(el);
+  });
+}
+
+function openBook(b) {
+  curBook = b;
+  $('#bookList').style.display = 'none';
+  $('#board').style.display = 'flex';
+  $('#bookTitle').textContent = b.name;
+
+  // 答案页下拉
+  const asel = $('#ansSel');
+  asel.innerHTML = '';
+  b.answerPages.forEach((p, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${p.imageName}（${p.boxes.length}框）`;
+    asel.appendChild(opt);
+  });
+
+  // 题干页下拉（有框的素材）
+  const tsel = $('#taskSel');
+  tsel.innerHTML = '';
+  taskIdxById = {};
+  let first = -1;
+  b.tasks.forEach((t, i) => {
+    if (!t.frames.length || !t.pageUrl) return;
+    if (first < 0) first = i;
+    taskIdxById[t.taskId] = i;
+    const opt = document.createElement('option');
+    opt.value = i;
+    const nAns = t.frames.filter(f => f.hasAnswer).length;
+    opt.textContent = `素材 ${t.taskId}${t.imageName ? '（'+t.imageName+'）' : ''}（${t.frames.length}框 / ${nAns}答案）`;
+    tsel.appendChild(opt);
+  });
+
+  if (!b.answerPages.length) { toast('该书没有答案页数据'); return; }
+  $('#statBar').style.display = 'flex';
+  updateStats();
+  asel.value = 0;
+  showAnswerPage(0);
+  $('#qViewer').innerHTML = '<div class="empty">点击左侧答案框跳转对应题干</div>';
+  $('#qPageName').textContent = '';
+}
+
+$('#ansSel').onchange = e => showAnswerPage(+e.target.value);
+$('#taskSel').onchange = e => showTask(+e.target.value, null, true);
+$('#btnBack').onclick = () => { $('#board').style.display='none'; $('#bookList').style.display='block'; };
+
+/* ---------- 统计指标（当前书） ---------- */
+function updateStats() {
+  if (!curBook) return;
+  // 抄写框总数 = 所有答案页去重后的框数
+  const chaoxie = curBook.answerPages.reduce((s,p)=>s+p.boxes.length, 0);
+  // 补框 = 当前书 localStorage 里的全部补框
+  const store = buku[curBook.id] || {};
+  const allBq = [].concat(...Object.values(store).map(a => a||[]));
+  const bqTotal = allBq.length;
+  const bqOk = allBq.filter(b => b.label === 'correct').length;
+  const bqBad = allBq.filter(b => b.label === 'wrong').length;
+  const bqUnlabeled = bqTotal - bqOk - bqBad;
+  // 指标
+  const pct = (a,b) => b ? (a/b*100) : null;
+  const fmtPct = v => v === null ? '–' : v.toFixed(1) + '%';
+  const bqRatio = pct(bqTotal, chaoxie + bqTotal);
+  const bqAcc = pct(bqOk, bqTotal);
+  const allAcc = pct(chaoxie + bqOk, chaoxie + bqTotal);
+  $('#stBqRatio').textContent = fmtPct(bqRatio);
+  $('#stBqRatioSub').textContent = `${bqTotal} / ${chaoxie + bqTotal}（补框/全部框）`;
+  $('#stBqAcc').textContent = fmtPct(bqAcc);
+  $('#stBqAccSub').textContent = `${bqOk} / ${bqTotal}${bqUnlabeled ? `（${bqUnlabeled}个未标注不计入）` : ''}`;
+  $('#stBqAcc').className = 'val ' + (bqAcc === null ? 'c-gray' : bqAcc >= 90 ? 'c-green' : bqAcc >= 70 ? 'c-blue' : 'c-orange');
+  $('#stAllAcc').textContent = fmtPct(allAcc);
+  $('#stAllAccSub').textContent = `${chaoxie + bqOk} / ${chaoxie + bqTotal}（抄写框${chaoxie}默认正确）`;
+  $('#stDetail').textContent = `抄写框 ${chaoxie} · 补框 ${bqTotal}（✓${bqOk} ✗${bqBad} 未标注${bqUnlabeled}）`;
+}
+
+/* ---------- 独立缩放（答案页 / 题干页各自维护） ---------- */
+// zoom = null 表示"适宽"模式；数字表示相对"适宽"的倍率（1=适宽原样）
+const zoomState = { a: null, q: null };
+const ZOOM_MIN = 0.2, ZOOM_MAX = 8, ZOOM_STEP = 1.25;
+function curScale(v, viewer, natW) {
+  const fit = Math.min(1, (viewer.clientWidth - 32) / natW);
+  return zoomState[v] === null ? fit : fit * zoomState[v];
+}
+function setZoom(v, val) {
+  zoomState[v] = val;
+  const pct = $(v === 'a' ? '#aZoomPct' : '#qZoomPct');
+  pct.textContent = val === null ? '适宽' : Math.round(val*100) + '%';
+  if (v === 'a' && curBook && curAnsIdx >= 0) renderAnswerPage(curAnsIdx);
+  if (v === 'q' && curBook && curTaskIdx >= 0) showTask(curTaskIdx, lastActiveFrame, true);
+}
+function fitScale(v) {
+  const viewer = $(v==='a'?'#aViewer':'#qViewer');
+  const img = viewer.querySelector('img.page');
+  const natW = img ? img.naturalWidth : 2400;
+  return Math.min(1, (viewer.clientWidth - 32) / natW);
+}
+function nudgeZoom(v, dir) {
+  const base = zoomState[v] === null ? 1 : zoomState[v];
+  setZoom(v, Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +(base * (dir>0 ? ZOOM_STEP : 1/ZOOM_STEP)).toFixed(3))));
+}
+function zoomToCursor(v, ev) {
+  // 以鼠标位置为中心缩放（滚轮）；zoom 值为相对适宽的倍率
+  const viewer = $(v==='a'?'#aViewer':'#qViewer');
+  const base = zoomState[v] === null ? 1 : zoomState[v];
+  const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +(base * (ev.deltaY < 0 ? ZOOM_STEP : 1/ZOOM_STEP)).toFixed(3)));
+  if (next === base) return;
+  // 保存鼠标相对视口位置，缩放后补偿滚动
+  const rect = viewer.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  const ratio = next / base;
+  setZoom(v, next);
+  requestAnimationFrame(() => {
+    viewer.scrollLeft = viewer.scrollLeft*ratio + mx*(ratio-1);
+    viewer.scrollTop  = viewer.scrollTop*ratio  + my*(ratio-1);
+  });
+}
+[['a','#aZoomIn','#aZoomOut','#aZoomFit','#aViewer'],['q','#qZoomIn','#qZoomOut','#qZoomFit','#qViewer']].forEach(([v,zi,zo,zf,sel]) => {
+  $(zi).onclick = () => nudgeZoom(v, +1);
+  $(zo).onclick = () => nudgeZoom(v, -1);
+  $(zf).onclick = () => setZoom(v, null);
+  const viewer = $(sel);
+  viewer.addEventListener('wheel', (ev) => {
+    if (!ev.ctrlKey && !ev.metaKey) return;   // 普通滚轮=滚动页面; Ctrl/Cmd+滚轮=缩放
+    ev.preventDefault();
+    zoomToCursor(v, ev);
+  }, { passive: false });
+});
+// 快捷键: 左侧 1 / 右侧 2 (放大), 配合 - 或 = ; 简化: A/Q 系
+window.addEventListener('keydown', (ev) => {
+  if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT' || ev.target.tagName === 'TEXTAREA') return;
+  if (!curBook) return;
+  if (ev.key === '+' || ev.key === '=') { nudgeZoom(ev.shiftKey ? 'q' : 'a', +1); }
+  else if (ev.key === '-' || ev.key === '_') { nudgeZoom(ev.shiftKey ? 'q' : 'a', -1); }
+  else if (ev.key === '0') { setZoom(ev.shiftKey ? 'q' : 'a', null); }
+});
+
+/* ---------- 答案页渲染（主视角：展示该页全部抄写框 + 补框） ---------- */
+let drawMode = false;      // 画补框模式
+let drawStart = null;      // 原图像素坐标
+let selBqId = null;        // 当前选中的补框
+// 补框存储: { bookId: { imageId: [ {id, x,y,w,h, label:null|'correct'|'wrong', match:{...}} ] } }
+const BQ_KEY = 'bukubq_v1';
+let buku = {}; // 只读版：不读写 localStorage
+const saveBq = () => {};
+const bqList = () => { if (!curBook) return []; buku[curBook.id] = buku[curBook.id] || {}; return buku[curBook.id]; };
+
+if (READ_ONLY) {} else $('#btnDraw').onclick = () => {
+  drawMode = !drawMode;
+  $('#btnDraw').classList.toggle('on', drawMode);
+  $('#aViewer').style.cursor = drawMode ? 'crosshair' : '';
+  toast(drawMode ? '画补框模式：在答案页上拖拽画框；再点按钮退出' : '已退出画框模式');
+};
+
+if (READ_ONLY) {} else $('#btnExport').onclick = () => {
+  const data = {};
+  for (const [bid, pages] of Object.entries(buku)) {
+    const bk = BOOKS.find(b => b.id === bid);
+    data[bid] = { bookName: bk ? bk.name : '', pages: {} };
+    for (const [imageId, boxes] of Object.entries(pages)) {
+      if (!boxes || !boxes.length) continue;
+      const pg = bk && bk.answerPages.find(p => p.imageId === imageId);
+      data[bid].pages[imageId] = { imageName: pg ? pg.imageName : '', boxes };
+    }
+  }
+  const blob = new Blob([JSON.stringify(data, null, 1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `补框_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  toast('补框数据已导出');
+};
+
+if (READ_ONLY) {} else $('#btnClear').onclick = () => {
+  if (!curBook) return;
+  if (!confirm('清空当前书的全部补框？')) return;
+  delete buku[curBook.id];
+  saveBq();
+  showAnswerPage(curAnsIdx);
+  updateStats();
+  toast('已清空');
+};
+
+function findNearestChaoxie(cx, cy) {
+  // cx,cy: 补框中心（原图像素）。算法：水平距离 |X1-X2| Top3 -> 垂直距离 |Y1-Y2| 最近
+  const p = curBook.answerPages[curAnsIdx];
+  const cands = p.boxes.map(b => {
+    const r = b.region;
+    const ax = r.x + r.width/2, ay = r.y + r.height/2;
+    return { b, dy: Math.abs(cy-ay), dx: Math.abs(cx-ax) };
+  }).sort((u,v) => u.dx - v.dx).slice(0,3);
+  if (!cands.length) return null;
+  const best = cands.reduce((m,c) => c.dy < m.dy ? c : m, cands[0]);
+  return best.b;
+}
+
+function renderAnswerPage(idx, activeKey) {
+  curAnsIdx = idx;
+  const p = curBook.answerPages[idx];
+  const v = $('#aViewer');
+  v.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'pageWrap';
+  const img = document.createElement('img');
+  img.className = 'page';
+  img.src = p.url;
+  wrap.appendChild(img);
+  // 画框预览层
+  const prev = document.createElement('div');
+  prev.id = 'drawPreview';
+  wrap.appendChild(prev);
+  img.onload = () => {
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const scale = curScale('a', v, nw);
+    img.style.width = nw+'px'; img.style.height = nh+'px';
+    img.style.transformOrigin = 'top left';
+    img.style.transform = `scale(${scale})`;
+    wrap.style.width = (nw*scale)+'px'; wrap.style.height = (nh*scale)+'px';
+    // ---- 抄写框 ----
+    p.boxes.forEach((bx, bi) => {
+      const r = bx.region;
+      const linked = bx.owners && bx.owners.length > 0;
+      const key = r.x+','+r.y;
+      const el = document.createElement('div');
+      el.className = 'bbox a' + (linked ? '' : ' unlinked') + (activeKey===key ? ' active' : '');
+      el.style.left = (r.x*scale)+'px'; el.style.top = (r.y*scale)+'px';
+      el.style.width = (r.width*scale)+'px'; el.style.height = (r.height*scale)+'px';
+      const own = linked ? `抄写框 → 素材${bx.owners[0].taskId} #${bx.owners[0].frameId}` + (bx.owners.length>1 ? ` 等${bx.owners.length}题` : '') : '未关联题目';
+      el.innerHTML = `<span class="aid">${bi+1}</span>`;
+      el.title = own;
+      el.dataset.key = key;
+      el.onclick = (ev) => { ev.stopPropagation(); selectAnswerBox(bx, el); };
+      wrap.appendChild(el);
+    });
+    // ---- 补框（只读版不渲染） ----
+    $('#aPageName').textContent = `${p.imageName} · ${p.boxes.length}个抄写框 · ${(bqList()[p.imageId]||[]).length}个补框`;
+    $('#aPrev').disabled = idx <= 0;
+    $('#aNext').disabled = idx >= curBook.answerPages.length - 1;
+    const act = wrap.querySelector('.bbox.a.active');
+    if (act) act.scrollIntoView({behavior:'smooth', block:'center'});
+  };
+  img.onerror = () => { v.innerHTML = '<div class="empty">答案页图加载失败</div>'; };
+  v.appendChild(wrap);
+  setupDrawHandlers(wrap, img, p, v);
+}
+
+function renderBuKu(wrap, p, scale) {
+  const store = bqList();
+  const boxes = store[p.imageId] || [];
+  boxes.forEach((bq, i) => {
+    const el = document.createElement('div');
+    el.className = 'bbox bq' + (bq.label==='correct' ? ' correct' : bq.label==='wrong' ? ' wrong' : '') + (selBqId===bq.id ? ' selected':'');
+    el.style.left = (bq.x*scale)+'px'; el.style.top = (bq.y*scale)+'px';
+    el.style.width = (bq.w*scale)+'px'; el.style.height = (bq.h*scale)+'px';
+    const n = i+1;
+    const lab = bq.label==='correct' ? '✓正确' : bq.label==='wrong' ? '✗错误' : '未标注';
+    const mt = bq.match ? ` → 素材${bq.match.taskId} #${bq.match.frameId}` : '';
+    el.title = `补框${n}（${lab}）${mt}`;
+    el.innerHTML = `<span class="bqTag">补${n}</span>
+      <span class="bqBtns">
+        <button class="bqBtn ok${bq.label==='correct'?' active':''}" title="标注：跳转正确(蓝)">✓</button>
+        <button class="bqBtn bad${bq.label==='wrong'?' active':''}" title="标注：跳转错误(黄)">✗</button>
+        <button class="bqBtn del" title="删除补框">🗑</button>
+      </span>`;
+    el.onclick = (ev) => { ev.stopPropagation(); selectBuKu(bq, el); };
+    el.querySelector('.ok').onclick = (ev) => { ev.stopPropagation(); bq.label='correct'; saveBq(); selBqId = bq.id; refreshBq(p); updateStats(); };
+    el.querySelector('.bad').onclick = (ev) => { ev.stopPropagation(); bq.label='wrong'; saveBq(); selBqId = bq.id; refreshBq(p); updateStats(); };
+    el.querySelector('.del').onclick = (ev) => { ev.stopPropagation(); store[p.imageId] = store[p.imageId].filter(x=>x.id!==bq.id); saveBq(); refreshBq(p); updateStats(); };
+    wrap.appendChild(el);
+  });
+}
+
+function refreshBq(p) {
+  const wrap = document.querySelector('#aViewer .pageWrap');
+  if (!wrap) return;
+  const img = wrap.querySelector('img.page');
+  const v = $('#aViewer');
+  const sc = curScale('a', v, img.naturalWidth);
+  wrap.querySelectorAll('.bbox.bq').forEach(e=>e.remove());
+  renderBuKu(wrap, p, sc);
+  $('#aPageName').textContent = `${p.imageName} · ${p.boxes.length}个抄写框 · ${(bqList()[p.imageId]||[]).length}个补框`;
+}
+
+function selectBuKu(bq, el) {
+  document.querySelectorAll('#aViewer .bbox.bq').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  selBqId = bq.id;
+  // 算法: 找邻近抄写框
+  const cx = bq.x + bq.w/2, cy = bq.y + bq.h/2;
+  const target = findNearestChaoxie(cx, cy);
+  if (!target) { toast('该页没有抄写框'); return; }
+  // 记录匹配结果
+  bq.match = target.owners && target.owners[0] ? { taskId: target.owners[0].taskId, frameId: target.owners[0].frameId, chaoxie: target.region } : null;
+  saveBq();
+  // 高亮匹配的抄写框（紫色）并滚动到它
+  document.querySelectorAll('#aViewer .bbox.a').forEach(b => b.classList.remove('matched'));
+  const key = target.region.x+','+target.region.y;
+  const mEl = [...document.querySelectorAll('#aViewer .bbox.a')].find(b => b.dataset.key === key);
+  if (mEl) { mEl.classList.add('matched'); mEl.scrollIntoView({behavior:'smooth', block:'center'}); }
+  // 跳转题干
+  if (!bq.match) { toast('邻近抄写框未关联题目'); return; }
+  const ti = taskIdxById[bq.match.taskId];
+  if (ti === undefined) { toast('找不到素材 ' + bq.match.taskId); return; }
+  $('#taskSel').value = ti;
+  showTask(ti, bq.match.frameId, false);
+}
+
+function setupDrawHandlers(wrap, img, p, viewer) {
+  let dragging = false;
+  const getScale = () => curScale('a', viewer, img.naturalWidth);
+  wrap.addEventListener('mousedown', (ev) => {
+    if (!drawMode) return;
+    if (ev.target.closest('.bbox')) return;
+    const scale = getScale();
+    const rect = wrap.getBoundingClientRect();
+    drawStart = { x: (ev.clientX - rect.left)/scale, y: (ev.clientY - rect.top)/scale };
+    dragging = true;
+    ev.preventDefault();
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (!dragging || !drawStart) return;
+    const scale = getScale();
+    const rect = wrap.getBoundingClientRect();
+    const cx = (ev.clientX - rect.left)/scale, cy = (ev.clientY - rect.top)/scale;
+    const prev = $('#drawPreview');
+    prev.style.display = 'block';
+    prev.style.left = (Math.min(drawStart.x,cx)*scale)+'px';
+    prev.style.top = (Math.min(drawStart.y,cy)*scale)+'px';
+    prev.style.width = (Math.abs(cx-drawStart.x)*scale)+'px';
+    prev.style.height = (Math.abs(cy-drawStart.y)*scale)+'px';
+  });
+  window.addEventListener('mouseup', (ev) => {
+    if (!dragging || !drawStart) return;
+    const scale = getScale();
+    const rect = wrap.getBoundingClientRect();
+    const cx = (ev.clientX - rect.left)/scale, cy = (ev.clientY - rect.top)/scale;
+    const box = { x: Math.round(Math.min(drawStart.x,cx)), y: Math.round(Math.min(drawStart.y,cy)),
+                  w: Math.round(Math.abs(cx-drawStart.x)), h: Math.round(Math.abs(cy-drawStart.y)) };
+    dragging = false; drawStart = null;
+    $('#drawPreview').style.display = 'none';
+    if (box.w < 15 || box.h < 15) { toast('框太小，忽略'); return; }
+    const store = bqList();
+    store[p.imageId] = store[p.imageId] || [];
+    const bq = { id: 'bq'+Date.now()+Math.random().toString(36).slice(2,6), x:box.x, y:box.y, w:box.w, h:box.h, label: null, match: null };
+    store[p.imageId].push(bq);
+    saveBq();
+    refreshBq(p);
+    updateStats();
+    toast('已添加补框，点击它可跳转题目');
+  });
+}
+function showAnswerPage(idx, activeKey) {
+  selBqId = null;
+  renderAnswerPage(idx, activeKey);
+}
+$('#aPrev').onclick = () => { if (curAnsIdx>0) { $('#ansSel').value=curAnsIdx-1; showAnswerPage(curAnsIdx-1); } };
+$('#aNext').onclick = () => { if (curAnsIdx<curBook.answerPages.length-1) { $('#ansSel').value=curAnsIdx+1; showAnswerPage(curAnsIdx+1); } };
+
+/* ---------- 点击答案框 -> 跳转题干页并高亮 ---------- */
+function selectAnswerBox(bx, el) {
+  document.querySelectorAll('#aViewer .bbox').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  if (!bx.owners || !bx.owners.length) { toast('该答案框未关联题目'); return; }
+  const own = bx.owners[0];
+  const ti = taskIdxById[own.taskId];
+  if (ti === undefined) { toast('找不到素材 ' + own.taskId); return; }
+  $('#taskSel').value = ti;
+  showTask(ti, own.frameId, false);
+}
+
+/* ---------- 题干页渲染 ---------- */
+let lastActiveFrame = null;
+function showTask(idx, activeFrameId, keepScroll) {
+  curTaskIdx = idx;
+  lastActiveFrame = activeFrameId;
+  const t = curBook.tasks[idx];
+  const v = $('#qViewer');
+  if (!t.pageUrl) { v.innerHTML = '<div class="empty">该素材无页面图</div>'; return; }
+  v.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'pageWrap';
+  const img = document.createElement('img');
+  img.className = 'page';
+  img.src = t.pageUrl;
+  wrap.appendChild(img);
+  img.onload = () => {
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const scale = curScale('q', v, nw);
+    img.style.width = nw+'px'; img.style.height = nh+'px';
+    img.style.transformOrigin = 'top left';
+    img.style.transform = `scale(${scale})`;
+    wrap.style.width = (nw*scale)+'px'; wrap.style.height = (nh*scale)+'px';
+    t.frames.forEach(f => {
+      const r = f.region;
+      const bx = document.createElement('div');
+      bx.className = 'bbox q' + (f.hasAnswer ? '' : ' noans') + (activeFrameId===f.frameId ? ' active':'');
+      bx.style.left = (r.x*scale)+'px'; bx.style.top = (r.y*scale)+'px';
+      bx.style.width = (r.width*scale)+'px'; bx.style.height = (r.height*scale)+'px';
+      bx.innerHTML = `<span class="noTag">无答案</span><span class="qid">#${f.frameId}</span>`;
+      bx.title = (f.content||'').slice(0,80);
+      bx.onclick = (ev) => { ev.stopPropagation(); selectQuestionFrame(t, f, bx); };
+      wrap.appendChild(bx);
+    });
+    $('#qPageName').textContent = `素材 ${t.taskId}${t.imageName ? ' · '+t.imageName : ''}${t.blockId ? ' · 块'+t.blockId : ''}`;
+    $('#qPrev').disabled = idxOfPrevTask() < 0;
+    $('#qNext').disabled = idxOfNextTask() < 0;
+    if (!keepScroll) {
+      const act = wrap.querySelector('.bbox.q.active');
+      if (act) { v.scrollTo({top:0}); setTimeout(()=>act.scrollIntoView({behavior:'smooth', block:'center'}), 60); }
+    }
+  };
+  img.onerror = () => { v.innerHTML = '<div class="empty">页面图加载失败</div>'; };
+  v.appendChild(wrap);
+}
+
+function idxOfPrevTask() {
+  for (let i = curTaskIdx-1; i >= 0; i--) { const t = curBook.tasks[i]; if (t.frames.length && t.pageUrl) return i; }
+  return -1;
+}
+function idxOfNextTask() {
+  for (let i = curTaskIdx+1; i < curBook.tasks.length; i++) { const t = curBook.tasks[i]; if (t.frames.length && t.pageUrl) return i; }
+  return -1;
+}
+$('#qPrev').onclick = () => { const i = idxOfPrevTask(); if (i>=0) { $('#taskSel').value=i; showTask(i, null, true);} };
+$('#qNext').onclick = () => { const i = idxOfNextTask(); if (i>=0) { $('#taskSel').value=i; showTask(i, null, true);} };
+
+/* ---------- 点击题干框 -> 滚动答案页到对应框 ---------- */
+function selectQuestionFrame(t, f, el) {
+  document.querySelectorAll('#qViewer .bbox').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (!f.hasAnswer) { toast('该题干框没有对应答案'); return; }
+  const a = f.answers[0];
+  const ai = curBook.answerPages.findIndex(p => p.imageId === a.imageId);
+  if (ai < 0) { toast('答案页不在列表中'); return; }
+  const key = a.regions[0] ? (a.regions[0].x+','+a.regions[0].y) : null;
+  if (ai !== curAnsIdx) { $('#ansSel').value = ai; showAnswerPage(ai, key); }
+  else {
+    const box = [...document.querySelectorAll('#aViewer .bbox.a')].find(b => b.dataset.key === key);
+    if (box) { document.querySelectorAll('#aViewer .bbox').forEach(b=>b.classList.remove('active')); box.classList.add('active'); box.scrollIntoView({behavior:'smooth', block:'center'}); }
+    else toast('该题对应多个答案框，已在答案页中');
+  }
+}
+
+/* ---------- 启动 ---------- */
+fetch('data/books.json').then(r => r.json()).then(d => { BOOKS = d; initBookList(); })
+  .catch(e => { $('#bookCards').innerHTML = '<div class="empty">数据加载失败: '+e+'</div>'; });
+</script>
+</body>
+</html>
