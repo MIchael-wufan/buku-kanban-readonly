@@ -391,19 +391,28 @@ if (READ_ONLY) {} else $('#btnClear').onclick = () => {
 };
 
 function findNearestChaoxie(bq) {
-  // 算法：补框保持x不动，向上/向下平移能触碰到的第一个抄写框（取两方向中平移距离最小者）
-  // 触碰条件 = x区间与补框重叠；平移距离 = 垂直间隙（已重叠记0）
+  // 算法（两段式）：
+  // 1) 补框保持x不动，向上/向下平移能触碰到的第一个抄写框（取两方向中垂直间隙最小者）
+  //    触碰条件 = x区间与补框重叠；垂直已重叠记间隙0
+  // 2) 若无任何x重叠的抄写框（上下平移都碰不到），回退：取框中心点欧氏距离最近的抄写框
   const p = curBook.answerPages[curAnsIdx];
+  if (!p.boxes.length) return null;
   let best = null;
+  const cx = bq.x + bq.w/2, cy = bq.y + bq.h/2;
   for (const bx of p.boxes) {
     const r = bx.region;
+    const ax = r.x + r.width/2, ay = r.y + r.height/2;
+    const dist = Math.hypot(cx-ax, cy-ay);   // 回退用：中心点欧氏距离
     const xOverlap = bq.x < r.x + r.width && bq.x + bq.w > r.x;
-    if (!xOverlap) continue;
+    if (!xOverlap) {
+      if (!best || (!best.isTouch && dist < best.dist)) best = { isTouch: false, dist, bx };
+      continue;
+    }
     let gap;
     if (r.y + r.height <= bq.y) gap = bq.y - (r.y + r.height);        // 上方：向上平移距离
     else if (r.y >= bq.y + bq.h) gap = r.y - (bq.y + bq.h);           // 下方：向下平移距离
     else gap = 0;                                                       // 垂直已重叠
-    if (!best || gap < best.gap) best = { gap, bx };
+    if (!best || best.isTouch === false || gap < best.gap) best = { isTouch: true, gap, dist, bx };
   }
   return best ? best.bx : null;
 }
