@@ -390,17 +390,22 @@ if (READ_ONLY) {} else $('#btnClear').onclick = () => {
   toast('已清空');
 };
 
-function findNearestChaoxie(cx, cy) {
-  // cx,cy: 补框中心（原图像素）。算法：水平距离 |X1-X2| Top3 -> 垂直距离 |Y1-Y2| 最近
+function findNearestChaoxie(bq) {
+  // 算法：补框保持x不动，向上/向下平移能触碰到的第一个抄写框（取两方向中平移距离最小者）
+  // 触碰条件 = x区间与补框重叠；平移距离 = 垂直间隙（已重叠记0）
   const p = curBook.answerPages[curAnsIdx];
-  const cands = p.boxes.map(b => {
-    const r = b.region;
-    const ax = r.x + r.width/2, ay = r.y + r.height/2;
-    return { b, dy: Math.abs(cy-ay), dx: Math.abs(cx-ax) };
-  }).sort((u,v) => u.dx - v.dx).slice(0,3);
-  if (!cands.length) return null;
-  const best = cands.reduce((m,c) => c.dy < m.dy ? c : m, cands[0]);
-  return best.b;
+  let best = null;
+  for (const bx of p.boxes) {
+    const r = bx.region;
+    const xOverlap = bq.x < r.x + r.width && bq.x + bq.w > r.x;
+    if (!xOverlap) continue;
+    let gap;
+    if (r.y + r.height <= bq.y) gap = bq.y - (r.y + r.height);        // 上方：向上平移距离
+    else if (r.y >= bq.y + bq.h) gap = r.y - (bq.y + bq.h);           // 下方：向下平移距离
+    else gap = 0;                                                       // 垂直已重叠
+    if (!best || gap < best.gap) best = { gap, bx };
+  }
+  return best ? best.bx : null;
 }
 
 function renderAnswerPage(idx, activeKey) {
@@ -497,9 +502,8 @@ function selectBuKu(bq, el) {
   document.querySelectorAll('#aViewer .bbox.bq').forEach(b => b.classList.remove('selected'));
   el.classList.add('selected');
   selBqId = bq.id;
-  // 算法: 找邻近抄写框
-  const cx = bq.x + bq.w/2, cy = bq.y + bq.h/2;
-  const target = findNearestChaoxie(cx, cy);
+  // 算法: 上下平移触碰最近的抄写框
+  const target = findNearestChaoxie(bq);
   if (!target) { toast('该页没有抄写框'); return; }
   // 记录匹配结果
   bq.match = target.owners && target.owners[0] ? { taskId: target.owners[0].taskId, frameId: target.owners[0].frameId, chaoxie: target.region } : null;
