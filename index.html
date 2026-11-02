@@ -232,13 +232,15 @@ function openBook(b) {
   taskIdxById = {};
   let first = -1;
   b.tasks.forEach((t, i) => {
-    if (!t.frames.length || !t.pageUrl) return;
+    if (!t.pageUrl) return;
     if (first < 0) first = i;
     taskIdxById[t.taskId] = i;
     const opt = document.createElement('option');
     opt.value = i;
     const nAns = t.frames.filter(f => f.hasAnswer).length;
-    opt.textContent = `素材 ${t.taskId}${t.imageName ? '（'+t.imageName+'）' : ''}（${t.frames.length}框 / ${nAns}答案）`;
+    opt.textContent = t.frames.length
+      ? `素材 ${t.taskId}${t.imageName ? '（'+t.imageName+'）' : ''}（${t.frames.length}框 / ${nAns}答案）`
+      : `素材 ${t.taskId}${t.imageName ? '（'+t.imageName+'）' : ''}（无题目框）`;
     tsel.appendChild(opt);
   });
 
@@ -639,11 +641,11 @@ function showTask(idx, activeFrameId, keepScroll) {
 }
 
 function idxOfPrevTask() {
-  for (let i = curTaskIdx-1; i >= 0; i--) { const t = curBook.tasks[i]; if (t.frames.length && t.pageUrl) return i; }
+  for (let i = curTaskIdx-1; i >= 0; i--) { const t = curBook.tasks[i]; if (t.pageUrl) return i; }
   return -1;
 }
 function idxOfNextTask() {
-  for (let i = curTaskIdx+1; i < curBook.tasks.length; i++) { const t = curBook.tasks[i]; if (t.frames.length && t.pageUrl) return i; }
+  for (let i = curTaskIdx+1; i < curBook.tasks.length; i++) { const t = curBook.tasks[i]; if (t.pageUrl) return i; }
   return -1;
 }
 $('#qPrev').onclick = () => { const i = idxOfPrevTask(); if (i>=0) { $('#taskSel').value=i; showTask(i, null, true);} };
