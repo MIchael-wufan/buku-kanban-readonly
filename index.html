@@ -87,6 +87,13 @@
   .bqBtn.ok { background:#165dff; } .bqBtn.ok.active { outline:2px solid #165dff; outline-offset:1px; }
   .bqBtn.bad { background:#ff9a00; } .bqBtn.bad.active { outline:2px solid #ff9a00; outline-offset:1px; }
   .bqBtn.del { background:#f53f3f; }
+  .visToggle { border:1px solid #d0d3d6; background:#fff; border-radius:6px; padding:3px 10px; cursor:pointer;
+               font-size:12px; user-select:none; white-space:nowrap; color:#4e5969; }
+  .visToggle.on { color:#fff; border-color:transparent; }
+  #tgChaoxie.on { background:#00b42a; }
+  #tgBqOk.on { background:#165dff; }
+  #tgBqBad.on { background:#ff9a00; }
+  .bbox.a.hiddenByToggle, .bbox.bq.hiddenByToggle { display:none !important; }
   #drawPreview { position:absolute; border:2px dashed #722ed1; background:rgba(114,46,209,.10); pointer-events:none; display:none; z-index:8; }
   .bbox.a.matched { border:3px solid #722ed1 !important; background:rgba(114,46,209,.22) !important; box-shadow:0 0 0 3px rgba(114,46,209,.35); z-index:3; }
   .bbox.a.matched .aid { background:#722ed1 !important; }
@@ -124,6 +131,11 @@
     <select id="ansSel"></select>
     <label style="font-size:12px;color:#86909c;">题干页</label>
     <select id="taskSel"></select>
+    <span style="display:flex;gap:6px;align-items:center;">
+      <span class="visToggle on" id="tgChaoxie">抄写框</span>
+      <span class="visToggle on" id="tgBqOk">正确补框</span>
+      <span class="visToggle on" id="tgBqBad">错误补框</span>
+    </span>
     <span class="legend">
       <span><span class="dot a"></span>抄写框</span>
           <span><span class="dot q"></span>题干框</span>
@@ -150,6 +162,7 @@
         <span class="zoomPct" id="aZoomPct">适宽</span>
         <button class="navBtn" id="aZoomIn" title="放大(+)">＋</button>
         <button class="navBtn" id="aZoomFit" title="适应宽度">适宽</button>
+        <span class="navBtn" id="btnNextUnlabeled" title="跳到下一个含未标注补框的答案页">▶ 未标注</span>
         
         
         
@@ -284,6 +297,42 @@ function updateStats() {
   $('#stAllAccSub').textContent = `${chaoxie + bqOk} / ${chaoxie + bqTotal}（抄写框${chaoxie}默认正确）`;
   $('#stDetail').textContent = `抄写框 ${chaoxie} · 补框 ${bqTotal}（✓${bqOk} ✗${bqBad} 未标注${bqUnlabeled}）`;
 }
+
+/* ---------- 三类框显隐切换（默认全显） ---------- */
+const vis = { chaoxie: true, bqOk: true, bqBad: true };
+function applyVis() {
+  document.querySelectorAll('#aViewer .bbox.a').forEach(el => el.classList.toggle('hiddenByToggle', !vis.chaoxie));
+  document.querySelectorAll('#aViewer .bbox.bq').forEach(el => {
+    const isOk = el.classList.contains('correct'), isBad = el.classList.contains('wrong');
+    // 未标注补框跟随"正确补框/错误补框"任一显示即显示
+    const hide = isOk ? !vis.bqOk : (isBad ? !vis.bqBad : (!vis.bqOk && !vis.bqBad));
+    el.classList.toggle('hiddenByToggle', hide);
+  });
+  $('#tgChaoxie').classList.toggle('on', vis.chaoxie);
+  $('#tgBqOk').classList.toggle('on', vis.bqOk);
+  $('#tgBqBad').classList.toggle('on', vis.bqBad);
+}
+[['#tgChaoxie','chaoxie'],['#tgBqOk','bqOk'],['#tgBqBad','bqBad']].forEach(([sel,k]) => {
+  $(sel).onclick = () => { vis[k] = !vis[k]; applyVis(); };
+});
+
+/* ---------- 快速跳转未标注补框 ---------- */
+$('#btnNextUnlabeled').onclick = () => {
+  if (!curBook) return;
+  const store = buku[curBook.id] || {};
+  const n = curBook.answerPages.length;
+  for (let k = 1; k <= n; k++) {
+    const i = (curAnsIdx + k) % n;
+    const boxes = store[curBook.answerPages[i].imageId] || [];
+    if (boxes.some(b => !b.label)) {
+      $('#ansSel').value = i;
+      showAnswerPage(i);
+      toast('已跳到 ' + curBook.answerPages[i].imageName + '（含未标注补框）');
+      return;
+    }
+  }
+  toast('当前书没有未标注的补框');
+};
 
 /* ---------- 独立缩放（答案页 / 题干页各自维护） ---------- */
 // zoom = null 表示"适宽"模式；数字表示相对"适宽"的倍率（1=适宽原样）
@@ -462,6 +511,7 @@ function renderAnswerPage(idx, activeKey) {
     $('#aPageName').textContent = `${p.imageName} · ${p.boxes.length}个抄写框 · ${(bqList()[p.imageId]||[]).length}个补框`;
     $('#aPrev').disabled = idx <= 0;
     $('#aNext').disabled = idx >= curBook.answerPages.length - 1;
+    applyVis();
     const act = wrap.querySelector('.bbox.a.active');
     if (act) act.scrollIntoView({behavior:'smooth', block:'center'});
   };
